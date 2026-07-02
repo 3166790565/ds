@@ -202,6 +202,10 @@ async def proxy_streaming(request: Request, body: dict, upstream_url: str):
                             cached_first = True
                             logger.info("✓ 缓存 reasoning_content  session=%s...", session_id[:8])
                     yield chunk
+            except Exception as e:
+                logger.error("流式传输上游读取异常: %s: %s", type(e).__name__, e)
+                # 生成器中异常只能通过 yield 错误 SSE 事件透传
+                yield f"data: {json.dumps({'error': {'message': f'stream error: {type(e).__name__}: {e}', 'type': 'stream_error'}})}\n\n"
             finally:
                 await resp.aclose()
 
