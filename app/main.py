@@ -182,7 +182,7 @@ async def proxy_streaming(request: Request, body: dict, upstream_url: str):
                 return Response(
                     content=error_body,
                     status_code=resp.status_code,
-                    headers=dict(resp.headers),
+                    headers={k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "transfer-encoding", "content-encoding")},
                     media_type=resp.headers.get("content-type", "application/json"),
                 )
 
@@ -242,7 +242,7 @@ async def proxy_non_streaming(request: Request, body: dict, upstream_url: str):
             return Response(
                 content=data,
                 status_code=resp.status_code,
-                headers=dict(resp.headers),
+                headers={k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "transfer-encoding", "content-encoding")},
                 media_type=resp.headers.get("content-type", "application/json"),
             )
     except httpx.TimeoutException:
@@ -321,9 +321,19 @@ async def update_config(data: dict):
 async def get_status():
     """检查代理运行状态和上游连通性"""
     cfg = AppConfig()
+    # 用 TCP 级联检测，不依赖 auth 头
+    from urllib.parse import urlparse
+    parsed = urlparse(cfg.upstream_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
     try:
-        r = await client.get(f"{cfg.upstream_url}/models", timeout=5.0)
-        return {"status": "running", "upstream_status": r.status_code}
+        import asyncio
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=5.0
+        )
+        writer.close()
+        await writer.wait_closed()
+        return {"status": "running", "upstream_status": "reachable"}
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
