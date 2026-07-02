@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>DeepSeek Reasoning Proxy 管理面板</title>
+<style>
+  /* ── 全局 ────────────────────────────────── */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0d1117; color: #c9d1d9; min-height: 100vh;
+    display: flex; justify-content: center; padding: 32px 16px;
+  }
+  .container { max-width: 960px; width: 100%; }
+
+  /* ── 头部 ────────────────────────────────── */
+  header {
+    text-align: center; margin-bottom: 32px;
+    border-bottom: 1px solid #30363d; padding-bottom: 20px;
+  }
+  header h1 { font-size: 26px; font-weight: 600; color: #f0f6fc; }
+  header p  { margin-top: 6px; font-size: 14px; color: #8b949e; }
+  .status-badge {
+    display: inline-block; margin-top: 10px; padding: 4px 14px;
+    border-radius: 20px; font-size: 13px; font-weight: 500;
+  }
+  .status-running { background: #1a3a2a; color: #3fb950; border: 1px solid #3fb950; }
+  .status-error   { background: #3a1a1a; color: #f85149; border: 1px solid #f85149; }
+
+  /* ── 卡片 ────────────────────────────────── */
+  .card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 24px; margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 16px; font-weight: 600; color: #f0f6fc;
+    margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+  }
+  .card-title .icon { font-size: 20px; }
+
+  /* ── 表单 ────────────────────────────────── */
+  .form-row {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  .form-row input[type="text"] {
+    flex: 1; min-width: 240px; padding: 10px 14px; border-radius: 6px;
+    border: 1px solid #30363d; background: #0d1117; color: #c9d1d9;
+    font-size: 14px; outline: none; transition: border 0.2s;
+  }
+  .form-row input[type="text"]:focus { border-color: #58a6ff; }
+
+  /* ── 按钮 ────────────────────────────────── */
+  .btn {
+    padding: 8px 20px; border-radius: 6px; border: none; cursor: pointer;
+    font-size: 14px; font-weight: 500; transition: all 0.15s; white-space: nowrap;
+  }
+  .btn-primary { background: #238636; color: #fff; }
+  .btn-primary:hover { background: #2ea043; }
+  .btn-danger  { background: #b62324; color: #fff; }
+  .btn-danger:hover  { background: #d03536; }
+  .btn-outline { background: transparent; color: #58a6ff; border: 1px solid #58a6ff; }
+  .btn-outline:hover { background: rgba(88,166,255,0.1); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+  /* ── 通知 ────────────────────────────────── */
+  .toast {
+    position: fixed; top: 20px; right: 20px; padding: 12px 20px;
+    border-radius: 8px; font-size: 14px; font-weight: 500;
+    z-index: 999; display: none; max-width: 400px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  .toast-success { background: #1a3a2a; color: #3fb950; border: 1px solid #3fb950; }
+  .toast-error   { background: #3a1a1a; color: #f85149; border: 1px solid #f85149; }
+
+  /* ── 日志表 ──────────────────────────────── */
+  .log-table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+  }
+  .log-table th {
+    text-align: left; padding: 8px 10px; border-bottom: 1px solid #30363d;
+    color: #8b949e; font-weight: 500;
+  }
+  .log-table td {
+    padding: 8px 10px; border-bottom: 1px solid #21262d;
+  }
+  .log-error   { color: #f85149; }
+  .log-ok      { color: #3fb950; }
+  .log-time    { color: #8b949e; font-family: monospace; }
+  .log-status  { font-family: monospace; }
+  .log-empty   { text-align: center; color: #8b949e; padding: 24px 0; }
+
+  /* ── 底部 ────────────────────────────────── */
+  footer {
+    text-align: center; font-size: 12px; color: #484f58;
+    border-top: 1px solid #21262d; padding-top: 16px; margin-top: 8px;
+  }
+
+  /* ── 响应式 ──────────────────────────────── */
+  @media (max-width:600px) {
+    .form-row { flex-direction: column; align-items: stretch; }
+    .form-row input[type="text"] { min-width: auto; }
+    .card { padding: 16px; }
+    body { padding: 16px 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- 头部 -->
+  <header>
+    <h1>🧠 DeepSeek Reasoning Proxy</h1>
+    <p>自动缓存并回填 reasoning_content 的 HTTP 代理服务</p>
+    <span id="statusBadge" class="status-badge status-running">检查中…</span>
+  </header>
+
+  <!-- Toast 通知 -->
+  <div id="toast" class="toast"></div>
+
+  <!-- 上游地址配置 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🔗</span> 上游中转站地址</div>
+    <div class="form-row">
+      <input type="text" id="upstreamInput" placeholder="https://api.deepseek.com/v1" />
+      <button class="btn btn-primary" id="saveBtn">保存</button>
+    </div>
+    <p style="margin-top:10px;font-size:13px;color:#8b949e;">
+      配置会写入 <code>data/config.json</code>，重启后保留
+    </p>
+  </div>
+
+  <!-- 代理状态 & 缓存操作 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📊</span> 代理状态</div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;">
+      <span id="upstreamStatus" style="font-size:14px;color:#8b949e;">检查上游连通性…</span>
+      <span style="flex:1;"></span>
+      <button class="btn btn-outline btn-sm" id="clearCacheBtn">🗑 清空缓存</button>
+      <button class="btn btn-outline btn-sm" id="refreshBtn">🔄 刷新</button>
+    </div>
+    <div id="cacheStats" style="margin-top:10px;font-size:13px;color:#8b949e;"></div>
+  </div>
+
+  <!-- 请求日志 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📋</span> 最近请求日志</div>
+    <table class="log-table">
+      <thead><tr>
+        <th style="width:80px;">时间</th>
+        <th style="width:70px;">状态</th>
+        <th>信息</th>
+      </tr></thead>
+      <tbody id="logBody">
+        <tr><td colspan="3" class="log-empty">暂无请求日志</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    DeepSeek Reasoning Proxy · 端口 9000 (API) / 8080 (WebUI)
+  </footer>
+</div>
+
+<script>
+// ── DOM ───────────────────────────────────────────────
+const upstreamInput = document.getElementById('upstreamInput');
+const statusBadge   = document.getElementById('statusBadge');
+const upstreamStatus = document.getElementById('upstreamStatus');
+const logBody       = document.getElementById('logBody');
+const cacheStatsDiv = document.getElementById('cacheStats');
+
+// ── Toast ────────────────────────────────────────────
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast toast-${type}`;
+  t.style.display = 'block';
+  clearTimeout(t._hide);
+  t._hide = setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+// ── API 基地址（相对路径，同源） ─────────────────────
+const API_BASE = '/api';
+
+// ── 加载配置 ─────────────────────────────────────────
+async function loadConfig() {
+  try {
+    const r = await fetch(`${API_BASE}/config`);
+    const d = await r.json();
+    upstreamInput.value = d.upstream_url || '';
+  } catch (e) {
+    console.warn('加载配置失败', e);
+  }
+}
+
+// ── 保存配置 ─────────────────────────────────────────
+async function saveConfig() {
+  const url = upstreamInput.value.trim();
+  if (!url) { showToast('请输入上游地址', 'error'); return; }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    showToast('地址必须以 http:// 或 https:// 开头', 'error');
+    return;
+  }
+  try {
+    const r = await fetch(`${API_BASE}/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upstream_url: url }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast('✅ 配置已保存');
+    } else {
+      showToast(d.error || '保存失败', 'error');
+    }
+  } catch (e) {
+    showToast('保存失败: ' + e.message, 'error');
+  }
+}
+
+// ── 检查状态 ─────────────────────────────────────────
+async function checkStatus() {
+  try {
+    const r = await fetch(`${API_BASE}/status`);
+    const d = await r.json();
+    if (d.status === 'running') {
+      statusBadge.textContent = '✅ 运行中';
+      statusBadge.className = 'status-badge status-running';
+      const upstreamLabel = d.upstream_status === 200 ? '正常' : `异常 (HTTP ${d.upstream_status})`;
+      upstreamStatus.textContent = `上游连通性: ${upstreamLabel}`;
+    } else {
+      statusBadge.textContent = '❌ 错误';
+      statusBadge.className = 'status-badge status-error';
+      upstreamStatus.textContent = `错误: ${d.error || '未知错误'}`;
+    }
+  } catch (e) {
+    statusBadge.textContent = '❌ 无法连接';
+    statusBadge.className = 'status-badge status-error';
+    upstreamStatus.textContent = '连接失败: ' + e.message;
+  }
+}
+
+// ── 加载日志 ─────────────────────────────────────────
+async function loadLogs() {
+  try {
+    const r = await fetch(`${API_BASE}/logs`);
+    const d = await r.json();
+    const logs = d.logs || [];
+    if (logs.length === 0) {
+      logBody.innerHTML = '<tr><td colspan="3" class="log-empty">暂无请求日志</td></tr>';
+      return;
+    }
+    logBody.innerHTML = logs.slice(-50).reverse().map(log => {
+      const statusCls = log.status >= 200 && log.status < 400 ? 'log-ok' : 'log-error';
+      return `<tr>
+        <td class="log-time">${escapeHtml(log.time || '')}</td>
+        <td class="log-status ${statusCls}">${log.status || '-'}</td>
+        <td>${escapeHtml(log.error || (log.status === 200 ? 'OK' : ''))}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    console.warn('加载日志失败', e);
+  }
+}
+
+// ── 缓存统计 ─────────────────────────────────────────
+async function loadCacheStats() {
+  try {
+    const r = await fetch(`${API_BASE}/cache/stats`);
+    const d = await r.json();
+    cacheStatsDiv.textContent = `缓存条目: ${d.active} 活跃 / ${d.expired} 过期 (共 ${d.total_keys} 条)`;
+  } catch (e) {
+    cacheStatsDiv.textContent = '缓存: 无法获取统计';
+  }
+}
+
+// ── 清空缓存 ─────────────────────────────────────────
+async function clearCache() {
+  try {
+    const r = await fetch(`${API_BASE}/cache/clear`, { method: 'POST' });
+    const d = await r.json();
+    showToast(`✅ 已清空 ${d.cleared} 条缓存`);
+    loadCacheStats();
+  } catch (e) {
+    showToast('清空缓存失败: ' + e.message, 'error');
+  }
+}
+
+// ── 辅助 ───────────────────────────────────────────────
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+// ── 刷新全部 ─────────────────────────────────────────
+async function refreshAll() {
+  await Promise.all([checkStatus(), loadLogs(), loadCacheStats()]);
+}
+
+// ── 事件绑定 ─────────────────────────────────────────
+document.getElementById('saveBtn').addEventListener('click', saveConfig);
+document.getElementById('clearCacheBtn').addEventListener('click', clearCache);
+document.getElementById('refreshBtn').addEventListener('click', refreshAll);
+
+// Enter 键保存
+upstreamInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') saveConfig();
+});
+
+// ── 自动刷新 ─────────────────────────────────────────
+loadConfig();
+refreshAll();
+setInterval(refreshAll, 10000); // 每 10 秒自动刷新
+</script>
+
+</body>
+</html>

@@ -1,0 +1,21 @@
+services:
+  ds-proxy:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: ds-reasoning-proxy
+    restart: unless-stopped
+    ports:
+      # WebUI 管理界面 → 8080（请求 /static 或 /api 路径）
+      - "8080:8080"
+      # API 代理端点 → 9000（请求 /v1/chat/completions 路径）
+      # 注意：两个端口都映射到容器的同一端口 8080，通过路径区分服务
+      - "9000:8080"
+    volumes:
+      # 持久化配置（上游地址等）
+      - ds-proxy-data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+
+volumes:
+  ds-proxy-data:
