@@ -228,7 +228,7 @@ async function checkStatus() {
     if (d.status === 'running') {
       statusBadge.textContent = '✅ 运行中';
       statusBadge.className = 'status-badge status-running';
-      const upstreamLabel = d.upstream_status === 200 ? '正常' : `异常 (HTTP ${d.upstream_status})`;
+      const upstreamLabel = d.upstream_status === 200 || d.upstream_status === 'reachable' ? '正常' : `异常 (HTTP ${d.upstream_status})`;
       upstreamStatus.textContent = `上游连通性: ${upstreamLabel}`;
     } else {
       statusBadge.textContent = '❌ 错误';
