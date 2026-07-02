@@ -169,25 +169,31 @@ async def proxy_streaming(request: Request, body: dict, upstream_url: str):
     cached_first = False
 
     try:
-        async with client.stream("POST", upstream_url, json=body, headers=headers) as resp:
-            add_log({
-                "time": time.strftime("%H:%M:%S"),
-                "status": resp.status_code,
-                "method": "POST",
-                "error": "" if resp.status_code == 200 else f"上游返回 {resp.status_code}",
-            })
+        # 注意：不能用 async with client.stream()，否则 async with 退出时
+        # resp 会被关闭，但 StreamingResponse 的生成器还没开始消费。
+        req = client.build_request("POST", upstream_url, json=body, headers=headers)
+        resp = await client.send(req, stream=True)
 
-            if resp.status_code != 200:
-                error_body = await resp.aread()
-                return Response(
-                    content=error_body,
-                    status_code=resp.status_code,
-                    headers={k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "transfer-encoding", "content-encoding")},
-                    media_type=resp.headers.get("content-type", "application/json"),
-                )
+        add_log({
+            "time": time.strftime("%H:%M:%S"),
+            "status": resp.status_code,
+            "method": "POST",
+            "error": "" if resp.status_code == 200 else f"上游返回 {resp.status_code}",
+        })
 
-            async def _stream():
-                nonlocal cached_first
+        if resp.status_code != 200:
+            error_body = await resp.aread()
+            await resp.aclose()
+            return Response(
+                content=error_body,
+                status_code=resp.status_code,
+                headers={k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "transfer-encoding", "content-encoding")},
+                media_type=resp.headers.get("content-type", "application/json"),
+            )
+
+        async def _stream():
+            nonlocal cached_first
+            try:
                 async for chunk in resp.aiter_text():
                     if not cached_first:
                         rc = extract_reasoning_from_chunk(chunk)
@@ -196,13 +202,15 @@ async def proxy_streaming(request: Request, body: dict, upstream_url: str):
                             cached_first = True
                             logger.info("✓ 缓存 reasoning_content  session=%s...", session_id[:8])
                     yield chunk
+            finally:
+                await resp.aclose()
 
-            return StreamingResponse(
-                _stream(),
-                status_code=200,
-                headers={k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "transfer-encoding", "content-encoding")},
-                media_type="text/event-stream",
-            )
+        return StreamingResponse(
+            _stream(),
+            status_code=200,
+            headers={k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "transfer-encoding", "content-encoding")},
+            media_type="text/event-stream",
+        )
     except httpx.TimeoutException:
         add_log({"time": time.strftime("%H:%M:%S"), "status": 0, "method": "POST", "error": "上游超时"})
         return build_error_response(504, "上游请求超时")
